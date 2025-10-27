@@ -120,6 +120,94 @@ func Login() gin.HandlerFunc {
 			"token": token,
 			"refresh_token": refreshToken,
 		})
+	}
+}
 
+func GetUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestedUserId := c.Param("id")
+
+		// Get claims from the context
+
+		claims, exists := c.Get
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		// Type assertion to get the claims object
+		tokenClaims, ok := claims.(*helpers.Claims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		tokenUserId := tokenClaims.UserId
+		userType := tokenClaims.Role
+
+		if userType != "ADMIN" && tokenUserId != requestedUserId {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var user models.User
+		err := userCollection.FindOne(ctx, bson.M{
+			"user_id": requestedUserId
+		}).Decode(&user)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, user)
+	}
+}
+
+func GetUsers() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// retrives claims from context
+
+		claims, exists := c.Get("claims")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		// Type assertion to get the claims object
+		tokenClaims, ok := claims.(*helpers.Claims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		// Check if the user is an admin
+		if tokenClaims.Role != "ADMIN" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Find all users
+
+		cursor, err := userCollection.Find(ctx, bson.M{})
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		var users []models.User
+
+		if err := cursor.All(ctx, &users); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, users)
 	}
 }
